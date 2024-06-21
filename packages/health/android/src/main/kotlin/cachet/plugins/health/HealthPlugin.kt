@@ -1,7 +1,9 @@
 package cachet.plugins.health
 
 import android.app.Activity
+import android.app.KeyguardManager
 import android.content.Context
+import android.content.Context.KEYGUARD_SERVICE
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -549,11 +551,32 @@ class HealthPlugin(private var channel: MethodChannel? = null) :
 
         private fun onHealthConnectPermissionCallback(permissionGranted: Set<String>) {
                 if (permissionGranted.isEmpty()) {
-                        mResult?.success(false)
+                        handleNotGranted(mResult)
                         Log.i("FLUTTER_HEALTH", "Access Denied (to Health Connect)!")
                 } else {
                         mResult?.success(true)
                         Log.i("FLUTTER_HEALTH", "Access Granted (to Health Connect)!")
+                }
+        }
+
+        private fun handleNotGranted(result: Result?) {
+                val keyguardManager = context!!.getSystemService(KEYGUARD_SERVICE) as KeyguardManager
+                // アクセス許可設定画面に遷移する際に画面ロック未設定だった場合、ロック設定を促すダイアログが表示される。
+                // ここで設定せずにダイアログを閉じてrevokeAllPermissions()を実行するとクラッシュするため、
+                // 画面ロック設定時のみすべての権限を削除する。
+                //
+                // [制限事項]
+                // アクセス許可設定画面で権限を取得せずに画面を閉じる操作を2回以上行った後で画面ロック未設定にすると
+                // アクセス許可設定画面に遷移できなくなるため、画面ロックを推奨する文言を追加するなどケアが必要
+                if (keyguardManager.isKeyguardSecure) {
+                        scope.launch {
+                            // アクセス許可設定画面で権限を取得せずに画面を閉じる操作を2回以上行うと
+                            // 設定画面を開くことができなくなるため、revokeAllPermissions()を使用して回避している。
+                            healthConnectClient.permissionController.revokeAllPermissions()
+                            result?.success(false)
+                        }
+                } else {
+                        result?.success(false)
                 }
         }
 
